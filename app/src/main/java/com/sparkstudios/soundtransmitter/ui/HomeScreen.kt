@@ -32,10 +32,10 @@ fun HomeScreen(
             color = Color.White
         )
         Spacer(modifier = Modifier.height(16.dp))
-//        Text(
-//            text = "Server IP: $ipAddress",
-//            style = MaterialTheme.typography.bodyLarge
-//        )
+        Text(
+            text = "Server IP: $ipAddress",
+            style = MaterialTheme.typography.bodyLarge
+        )
 //        Text(
 //            text = "WebSocket URL: ws://$ipAddress:8080/audio",
 //            style = MaterialTheme.typography.bodyMedium
