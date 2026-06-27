@@ -1,7 +1,9 @@
 package com.sparkstudios.soundtransmitter
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -9,7 +11,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import com.sparkstudios.soundtransmitter.service.StreamingService
 import com.sparkstudios.soundtransmitter.ui.HomeScreen
 import com.sparkstudios.soundtransmitter.ui.theme.SoundTransmitterTheme
@@ -20,6 +25,28 @@ class MainActivity : ComponentActivity() {
 
     private var isStreaming by mutableStateOf(false)
 
+    /**
+     * RECORD_AUDIO permission launcher
+     */
+    private val audioPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (!granted)
+                return@registerForActivityResult
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                projectionLauncher.launch(
+                    projectionManager.createScreenCaptureIntent()
+                )
+            }
+
+        }
+
+    /**
+     * MediaProjection permission launcher
+     */
     @RequiresApi(Build.VERSION_CODES.Q)
     private val projectionLauncher =
         registerForActivityResult(
@@ -47,7 +74,10 @@ class MainActivity : ComponentActivity() {
 
                 }
 
-            startForegroundService(serviceIntent)
+            ContextCompat.startForegroundService(
+                this,
+                serviceIntent
+            )
 
             isStreaming = true
 
@@ -72,13 +102,7 @@ class MainActivity : ComponentActivity() {
 
                     onStartStreaming = {
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-
-                            projectionLauncher.launch(
-                                projectionManager.createScreenCaptureIntent()
-                            )
-
-                        }
+                        startStreaming()
 
                     },
 
@@ -100,6 +124,31 @@ class MainActivity : ComponentActivity() {
             }
 
         }
+
+    }
+
+    private fun startStreaming() {
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
+            return
+
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+
+            audioPermissionLauncher.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
+
+            return
+        }
+
+        projectionLauncher.launch(
+            projectionManager.createScreenCaptureIntent()
+        )
 
     }
 
