@@ -1,3 +1,5 @@
+![Architecture](architecture.png)
+
 # 📺 Sound Transmitter TV
 
 > Transform your Android TV into a low-latency wireless audio transmitter.
