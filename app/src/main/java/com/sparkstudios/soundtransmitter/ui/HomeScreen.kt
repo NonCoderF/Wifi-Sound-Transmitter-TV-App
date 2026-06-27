@@ -34,7 +34,8 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "Server IP: $ipAddress",
-            style = MaterialTheme.typography.bodyLarge
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White
         )
 //        Text(
 //            text = "WebSocket URL: ws://$ipAddress:8080/audio",
@@ -47,7 +48,7 @@ fun HomeScreen(
                 text = if (isStreaming)
                     "🟢 Transmitting"
                 else
-                    "⚪ Idle"
+                    "🟢 Idle"
             )
         }
     }
