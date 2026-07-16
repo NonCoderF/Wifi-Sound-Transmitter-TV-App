@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.audio
+package com.sparkstudios.sonicbridge.tv.audio
 
 import android.Manifest
 import android.media.AudioAttributes

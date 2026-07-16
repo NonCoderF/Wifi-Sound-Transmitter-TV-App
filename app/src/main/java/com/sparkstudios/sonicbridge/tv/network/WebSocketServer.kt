@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.network
+package com.sparkstudios.sonicbridge.tv.network
 
 import android.util.Log
 import io.ktor.server.application.*

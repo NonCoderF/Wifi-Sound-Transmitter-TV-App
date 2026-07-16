@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.utils
+package com.sparkstudios.sonicbridge.tv.utils
 
 import java.net.InetAddress
 import java.net.NetworkInterface

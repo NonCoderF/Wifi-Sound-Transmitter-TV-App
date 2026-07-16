@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter
+package com.sparkstudios.sonicbridge.tv
 
 import android.Manifest
 import android.app.Activity
@@ -15,11 +15,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import com.sparkstudios.soundtransmitter.service.StreamingService
-import com.sparkstudios.soundtransmitter.ui.HomeScreen
-import com.sparkstudios.soundtransmitter.ui.theme.SoundTransmitterTheme
+import com.sparkstudios.sonicbridge.tv.ui.HomeScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.activity.ComponentActivity() {
 
     private lateinit var projectionManager: MediaProjectionManager
 
@@ -59,16 +57,16 @@ class MainActivity : ComponentActivity() {
             val serviceIntent =
                 Intent(
                     this,
-                    StreamingService::class.java
+                    _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService::class.java
                 ).apply {
 
                     putExtra(
-                        StreamingService.EXTRA_RESULT_CODE,
+                        _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService.Companion.EXTRA_RESULT_CODE,
                         result.resultCode
                     )
 
                     putExtra(
-                        StreamingService.EXTRA_RESULT_DATA,
+                        _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService.Companion.EXTRA_RESULT_DATA,
                         result.data
                     )
 
@@ -94,7 +92,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
 
-            SoundTransmitterTheme {
+            _root_ide_package_.com.sparkstudios.sonicbridge.tv.ui.theme.SoundTransmitterTheme {
 
                 HomeScreen(
 
@@ -111,7 +109,7 @@ class MainActivity : ComponentActivity() {
                         stopService(
                             Intent(
                                 this,
-                                StreamingService::class.java
+                                _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService::class.java
                             )
                         )
 
@@ -157,7 +155,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
 
         isStreaming =
-            StreamingService.isRunning
+            _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService.Companion.isRunning
 
     }
 

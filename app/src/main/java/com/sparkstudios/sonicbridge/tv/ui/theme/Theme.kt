@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.ui.theme
+package com.sparkstudios.sonicbridge.tv.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable

@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.ui
+package com.sparkstudios.sonicbridge.tv.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,8 +18,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
-import com.sparkstudios.soundtransmitter.ui.theme.SoundTransmitterTheme
-import com.sparkstudios.soundtransmitter.utils.NetworkUtils
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -29,7 +27,7 @@ fun HomeScreen(
     onStartStreaming: () -> Unit = {},
     onStopStreaming: () -> Unit = {}
 ) {
-    val ipAddress = remember { NetworkUtils.getIPAddress() }
+    val ipAddress = remember { _root_ide_package_.com.sparkstudios.sonicbridge.tv.utils.NetworkUtils.getIPAddress() }
     val focusRequester = remember { FocusRequester() }
 
     // Request focus on launch to resolve Android TV navigation requiring two clicks
@@ -246,7 +244,7 @@ fun HomeScreen(
 )
 @Composable
 private fun HomeScreenPreview() {
-    SoundTransmitterTheme {
+    _root_ide_package_.com.sparkstudios.sonicbridge.tv.ui.theme.SoundTransmitterTheme {
         HomeScreen()
     }
 }

@@ -1,4 +1,4 @@
-package com.sparkstudios.soundtransmitter.ui.theme
+package com.sparkstudios.sonicbridge.tv.ui.theme
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
