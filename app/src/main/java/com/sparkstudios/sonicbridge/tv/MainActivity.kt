@@ -154,8 +154,12 @@ class MainActivity : androidx.activity.ComponentActivity() {
 
         super.onResume()
 
-        isStreaming =
-            _root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService.Companion.isRunning
+        // The projection result and onResume can arrive before the foreground
+        // service has executed onStartCommand(). Do not overwrite the optimistic
+        // started state with a stale false value during that handoff.
+        if (_root_ide_package_.com.sparkstudios.sonicbridge.tv.service.StreamingService.Companion.isRunning) {
+            isStreaming = true
+        }
 
     }
 

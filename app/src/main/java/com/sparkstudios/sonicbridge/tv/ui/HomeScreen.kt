@@ -30,10 +30,13 @@ fun HomeScreen(
     val ipAddress = remember { _root_ide_package_.com.sparkstudios.sonicbridge.tv.utils.NetworkUtils.getIPAddress() }
     val focusRequester = remember { FocusRequester() }
 
-    // Request focus on launch to resolve Android TV navigation requiring two clicks
+    // Android TV can compose the screen after the first remote press. Retry until
+    // the action button actually owns focus so that press activates it immediately.
     LaunchedEffect(Unit) {
-        delay(150)
-        focusRequester.requestFocus()
+        repeat(10) {
+            focusRequester.requestFocus()
+            delay(100)
+        }
     }
 
     // Modern TV dark gradient background

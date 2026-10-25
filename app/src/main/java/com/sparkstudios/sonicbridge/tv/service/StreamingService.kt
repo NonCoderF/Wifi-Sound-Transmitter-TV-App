@@ -30,6 +30,8 @@ class StreamingService : android.app.Service() {
 
         private const val NOTIFICATION_ID = 1001
 
+        private const val WEBSOCKET_PORT = 8080
+
         const val EXTRA_RESULT_CODE = "resultCode"
 
         const val EXTRA_RESULT_DATA = "resultData"
@@ -173,7 +175,13 @@ class StreamingService : android.app.Service() {
 
         Log.d(TAG, "Starting WebSocket")
 
-        webSocketServer.start()
+        Log.d(
+            TAG,
+            "Audio protocol: ws://<TV-IP>:8080/audio, raw PCM little-endian " +
+                "48 kHz stereo 16-bit, 1,920-byte / 10-ms packets"
+        )
+
+        webSocketServer.start(port = WEBSOCKET_PORT)
 
         Log.d(TAG, "Starting Audio Capture")
 

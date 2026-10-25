@@ -1,6 +1,7 @@
 package com.sparkstudios.sonicbridge.tv.network
 
 import android.util.Log
+import com.sparkstudios.sonicbridge.tv.audio.AudioCaptureManager
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
 import io.ktor.server.engine.*
@@ -9,14 +10,17 @@ import io.ktor.server.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentHashMap
 
 class WebSocketServer(
-    private val audioChannel: Channel<ByteArray>
+    private val audioChannel: Channel<AudioCaptureManager.AudioPacket>
 ) {
 
     companion object {
         private const val TAG = "WebSocketServer"
+        private const val CLIENT_QUEUE_CAPACITY = 2
     }
 
     private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
@@ -25,8 +29,77 @@ class WebSocketServer(
 
     private var broadcastJob: Job? = null
 
-    private val sessions =
-        ConcurrentHashMap.newKeySet<DefaultWebSocketServerSession>()
+    private class ClientConnection(
+        val session: DefaultWebSocketServerSession,
+        private val scope: CoroutineScope,
+        private val onSendFailure: (ClientConnection, Throwable) -> Unit
+    ) {
+        val queue = Channel<AudioCaptureManager.AudioPacket>(CLIENT_QUEUE_CAPACITY)
+        private val depth = AtomicInteger(0)
+        private var sentPacketCount = 0L
+        private val senderJob = scope.launch {
+            for (packet in queue) {
+                decrementDepth()
+                try {
+                    val sendStartedNanos = System.nanoTime()
+                    session.send(Frame.Binary(fin = true, data = packet.data))
+                    val sendDurationMs = (System.nanoTime() - sendStartedNanos) / 1_000_000
+                    val ageMs = (System.nanoTime() - packet.capturedAtNanos) / 1_000_000
+                    sentPacketCount++
+                    if (sentPacketCount % 100L == 0L) {
+                        Log.d(
+                            TAG,
+                            "Sent packet #$sentPacketCount: size=${packet.data.size} bytes, " +
+                                "duration=${AudioCaptureManager.PACKET_DURATION_MS} ms, " +
+                                "send=${sendDurationMs} ms, capture-to-send=${ageMs} ms, " +
+                                "queue depth=${depth.get()}"
+                        )
+                    }
+                    if (sendDurationMs > AudioCaptureManager.PACKET_DURATION_MS) {
+                        Log.w(
+                            TAG,
+                            "Slow client: send took ${sendDurationMs} ms for a " +
+                                "${AudioCaptureManager.PACKET_DURATION_MS}-ms packet"
+                        )
+                    }
+                } catch (error: Throwable) {
+                    onSendFailure(this@ClientConnection, error)
+                    queue.close()
+                    break
+                }
+            }
+        }
+
+        @Synchronized
+        fun enqueue(packet: AudioCaptureManager.AudioPacket): String {
+            if (queue.trySend(packet).isSuccess) {
+                return "queued depth=${depth.incrementAndGet()}"
+            }
+
+            // Keep the newest audio. Removing one old packet preserves the order of
+            // packets that are actually sent while bounding latency to two packets.
+            val dropped = queue.tryReceive().getOrNull()
+            if (dropped != null) depth.decrementAndGet()
+
+            return if (queue.trySend(packet).isSuccess) {
+                "dropped stale packet; queued depth=${depth.incrementAndGet()}"
+            } else {
+                "dropped incoming packet; queue depth=${depth.get()}"
+            }
+        }
+
+        @Synchronized
+        private fun decrementDepth() {
+            depth.decrementAndGet()
+        }
+
+        suspend fun close() {
+            queue.close()
+            senderJob.cancelAndJoin()
+        }
+    }
+
+    private val clients = ConcurrentHashMap<DefaultWebSocketServerSession, ClientConnection>()
 
     fun start(port: Int = 8080) {
 
@@ -40,9 +113,13 @@ class WebSocketServer(
 
                 webSocket("/audio") {
 
-                    sessions.add(this)
+                    val client = ClientConnection(this, scope) { connection, error ->
+                        Log.e(TAG, "Send failed; removing client", error)
+                        clients.remove(connection.session)
+                    }
+                    clients[this] = client
 
-                    Log.d(TAG, "Client Connected : ${sessions.size}")
+                    Log.d(TAG, "Client Connected: ${clients.size}, queue capacity=$CLIENT_QUEUE_CAPACITY")
 
                     try {
 
@@ -55,9 +132,9 @@ class WebSocketServer(
 
                     } finally {
 
-                        sessions.remove(this)
+                        clients.remove(this)?.close()
 
-                        Log.d(TAG, "Client Disconnected : ${sessions.size}")
+                        Log.d(TAG, "Client Disconnected: ${clients.size}")
 
                     }
 
@@ -69,7 +146,7 @@ class WebSocketServer(
 
         server!!.start(wait = false)
 
-        Log.d(TAG, "WebSocket Server Started")
+        Log.d(TAG, "WebSocket Server Started on port $port, endpoint=/audio")
 
         startBroadcaster()
 
@@ -78,53 +155,30 @@ class WebSocketServer(
     private fun startBroadcaster() {
 
         broadcastJob = scope.launch {
+            var packetCount = 0L
 
             while (isActive) {
 
-                val audio = audioChannel.receive()
-
-                if (sessions.isEmpty())
-                    continue
-
-                val deadSessions = mutableListOf<DefaultWebSocketServerSession>()
-
-                coroutineScope {
-
-                    sessions.forEach { session ->
-
-                        launch {
-
-                            try {
-
-                                session.send(
-                                    Frame.Binary(
-                                        fin = true,
-                                        data = audio
-                                    )
-                                )
-
-                            } catch (e: Exception) {
-
-                                Log.e(
-                                    TAG,
-                                    "Send Failed",
-                                    e
-                                )
-
-                                deadSessions.add(session)
-
-                            }
-
-                        }
-
-                    }
-
+                val packet = try {
+                    audioChannel.receive()
+                } catch (_: ClosedReceiveChannelException) {
+                    break
                 }
 
-                deadSessions.forEach {
+                if (clients.isEmpty())
+                    continue
 
-                    sessions.remove(it)
+                packetCount++
 
+                clients.values.forEach { client ->
+                    val result = client.enqueue(packet)
+                    if (packetCount % 100L == 0L) {
+                        Log.d(
+                            TAG,
+                            "Broadcast packet #$packetCount: size=${packet.data.size} bytes, " +
+                                "duration=${AudioCaptureManager.PACKET_DURATION_MS} ms, $result"
+                        )
+                    }
                 }
 
             }
@@ -141,18 +195,14 @@ class WebSocketServer(
 
         scope.cancel()
 
-        sessions.forEach {
-
+        clients.values.forEach { client ->
             try {
-
-                it.close()
-
+                client.session.close()
+                client.close()
             } catch (_: Exception) {
             }
-
         }
-
-        sessions.clear()
+        clients.clear()
 
         server?.stop(
             gracePeriodMillis = 1000,
