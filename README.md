@@ -197,3 +197,99 @@ Senior Android Developer
 ---
 
 ⭐ If you found this project interesting, consider giving it a star!
+
+---
+
+## Current low-latency pipeline
+
+The transmitter is designed for live audio and lip-sync. It uses small bounded
+buffers and discards stale audio under pressure instead of allowing delay to
+grow indefinitely.
+
+```mermaid
+flowchart LR
+    TV[Android TV playback audio]
+    MIX[Android audio mixer]
+    PROJ[MediaProjection permission]
+    CAP[AudioPlaybackCaptureConfiguration]
+    REC[AudioRecord\n48 kHz stereo PCM16]
+    PACK[Packetizer\n1,920 bytes / 10 ms]
+    AQ[Audio channel\n3 packets max]
+    WS[Ktor WebSocket server\nport 8080 /audio]
+    CQ[Per-client queue\n3 packets max]
+    NET[Local Wi-Fi / TCP]
+    RX[Receiver PCM decoder]
+    PLAY[AudioTrack / speakers / headphones]
+
+    TV --> MIX
+    PROJ --> CAP
+    MIX --> CAP
+    CAP --> REC
+    REC --> PACK
+    PACK --> AQ
+    AQ --> WS
+    WS --> CQ
+    CQ --> NET
+    NET --> RX
+    RX --> PLAY
+
+    AQ -. "drop oldest when full" .-> AQ
+    CQ -. "drop stale packet when full" .-> CQ
+```
+
+### Low-latency algorithm
+
+1. Playback audio is captured through `MediaProjection` and
+   `AudioPlaybackCaptureConfiguration`.
+2. `AudioRecord` reads 48 kHz, stereo, 16-bit PCM.
+3. Audio is grouped into 1,920-byte packets. Each packet represents 10 ms.
+4. The capture channel holds at most three packets, approximately 30 ms.
+5. Each WebSocket client has a maximum queue of three packets, approximately
+   30 ms.
+6. When a queue is full, stale audio is discarded so the stream stays close to
+   real time.
+7. Every packet is sent as a complete binary WebSocket frame.
+8. The receiver decodes the PCM bytes and plays them using a low-latency audio
+   API.
+
+This favors a short audio gap over steadily increasing lip-sync delay when a
+receiver or network cannot keep up.
+
+### Current audio contract
+
+| Property | Value |
+|---|---|
+| Sample rate | 48,000 Hz |
+| Channels | Stereo |
+| Encoding | PCM 16-bit little-endian |
+| Packet size | 1,920 bytes |
+| Packet duration | 10 ms |
+| Transport | WebSocket binary frames |
+| Endpoint | `ws://<TV-IP>:8080/audio` |
+
+### Why this is not literally zero latency
+
+The app minimizes transmitter-side delay, but total latency also depends on the
+Android playback mixer, `AudioRecord` buffering, Wi-Fi/TCP scheduling, receiver
+buffers, `AudioTrack`, and Bluetooth output. The transmitter keeps its own
+queues bounded; the receiver should do the same.
+
+### Runtime components
+
+- `MainActivity`: requests permissions, starts/stops streaming, and displays the
+  endpoint.
+- `StreamingService`: owns the foreground-service lifecycle and port `8080`.
+- `AudioCaptureManager`: captures, packetizes, timestamps, and queues PCM data.
+- `WebSocketServer`: accepts `/audio` clients and broadcasts packets with a
+  bounded per-client queue.
+
+### Diagnostics
+
+The server logs capture-to-send age, WebSocket send duration, queue depth,
+slow-client warnings, and packet drops. If capture-to-send is low but lip-sync
+is still poor, the remaining delay is likely in receiver playback or Bluetooth.
+If send duration repeatedly exceeds 10 ms, the receiver or network is not
+consuming audio quickly enough.
+
+The WebSocket endpoint is unencrypted and unauthenticated, so it should only be
+used on a trusted local network.

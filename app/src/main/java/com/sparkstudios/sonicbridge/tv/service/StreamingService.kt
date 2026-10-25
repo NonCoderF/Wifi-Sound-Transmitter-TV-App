@@ -185,9 +185,20 @@ class StreamingService : android.app.Service() {
 
         Log.d(TAG, "Starting Audio Capture")
 
-        audioCaptureManager.startCapture(
+        val captureStarted = audioCaptureManager.startCapture(
             mediaProjection!!
         )
+
+        if (!captureStarted) {
+            Log.e(TAG, "Audio capture failed; stopping streaming")
+            CoroutineScope(Dispatchers.IO).launch {
+                webSocketServer.stop()
+            }
+            mediaProjection?.stop()
+            mediaProjection = null
+            stopSelf()
+            return
+        }
 
         isRunning = true
 

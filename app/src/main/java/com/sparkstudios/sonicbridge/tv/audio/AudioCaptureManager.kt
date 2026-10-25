@@ -15,8 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlin.math.max
 
 class AudioCaptureManager {
@@ -29,9 +29,9 @@ class AudioCaptureManager {
         const val BYTES_PER_FRAME = CHANNEL_COUNT * BYTES_PER_SAMPLE
         const val PACKET_DURATION_MS = 10L
         const val PACKET_SIZE_BYTES = 1_920
-        private const val MIN_INTERNAL_BUFFER_BYTES = 3_840
-        private const val CHANNEL_CAPACITY = 2
-        private const val CHANNEL_SEND_TIMEOUT_MS = 20L
+        // Three 10-ms packets absorb short Android/Ktor scheduling hiccups
+        // without allowing an unbounded latency backlog.
+        private const val CHANNEL_CAPACITY = 3
     }
 
     data class AudioPacket(
@@ -39,7 +39,12 @@ class AudioCaptureManager {
         val capturedAtNanos: Long
     )
 
-    val audioChannel = Channel<AudioPacket>(capacity = CHANNEL_CAPACITY)
+    // Keep a small newest-first buffer. This prevents a single scheduler hiccup
+    // from causing audible gaps while still bounding stale audio to 30 ms.
+    val audioChannel = Channel<AudioPacket>(
+        capacity = CHANNEL_CAPACITY,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     private var audioRecord: AudioRecord? = null
 
@@ -63,7 +68,9 @@ class AudioCaptureManager {
     )
 
     private val bufferSize = run {
-        val required = max(minimumBufferSize, MIN_INTERNAL_BUFFER_BYTES)
+        // Do not add an artificial 20-ms buffer. AudioRecord still enforces its
+        // platform minimum, but we avoid making the app's own buffer larger.
+        val required = max(minimumBufferSize, PACKET_SIZE_BYTES)
         // PCM stereo frames are four bytes; keep the recorder buffer frame-aligned.
         required + ((BYTES_PER_FRAME - (required % BYTES_PER_FRAME)) % BYTES_PER_FRAME)
     }
@@ -72,10 +79,10 @@ class AudioCaptureManager {
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun startCapture(
         mediaProjection: MediaProjection
-    ) {
+    ): Boolean {
 
         if (isRecording)
-            return
+            return true
 
         val playbackConfig =
             AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
@@ -103,7 +110,7 @@ class AudioCaptureManager {
 
             stopCapture()
 
-            return
+            return false
         }
 
         audioRecord?.startRecording()
@@ -114,7 +121,7 @@ class AudioCaptureManager {
 
             stopCapture()
 
-            return
+            return false
         }
 
         isRecording = true
@@ -171,23 +178,16 @@ class AudioCaptureManager {
                     packetCount++
                     val capturedAtNanos = System.nanoTime()
                     val completePacket = packet.copyOf()
-                    val queued = withTimeoutOrNull(CHANNEL_SEND_TIMEOUT_MS) {
-                        audioChannel.send(
-                            AudioPacket(
-                                data = completePacket,
-                                capturedAtNanos = capturedAtNanos
-                            )
+                    // Never wait behind old audio. DROP_OLDEST keeps the stream
+                    // close to real time when the server or network is busy.
+                    audioChannel.trySend(
+                        AudioPacket(
+                            data = completePacket,
+                            capturedAtNanos = capturedAtNanos
                         )
-                        true
-                    } == true
+                    )
 
-                    if (!queued) {
-                        Log.w(
-                            TAG,
-                            "Dropped packet #$packetCount: channel full after " +
-                                "$CHANNEL_SEND_TIMEOUT_MS ms; depth=$CHANNEL_CAPACITY"
-                        )
-                    } else if (packetCount % 100L == 0L) {
+                    if (packetCount % 100L == 0L) {
                         Log.d(
                             TAG,
                             "Packet #$packetCount queued: size=${completePacket.size} bytes, " +
@@ -203,6 +203,8 @@ class AudioCaptureManager {
             Log.d(TAG, "Capture Finished")
 
         }
+
+        return true
 
     }
 

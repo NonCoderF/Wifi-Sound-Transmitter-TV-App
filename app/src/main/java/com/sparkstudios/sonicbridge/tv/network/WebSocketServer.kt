@@ -20,7 +20,9 @@ class WebSocketServer(
 
     companion object {
         private const val TAG = "WebSocketServer"
-        private const val CLIENT_QUEUE_CAPACITY = 2
+        // Three 10-ms packets provide a small jitter buffer for network and
+        // receiver scheduling without allowing latency to grow indefinitely.
+        private const val CLIENT_QUEUE_CAPACITY = 3
     }
 
     private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
